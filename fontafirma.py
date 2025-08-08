@@ -68,6 +68,9 @@ def cargar_desde_sheets():
     df = df[cols].copy()
     df["piso"] = pd.to_numeric(df["piso"], errors="coerce").fillna(0).astype(int)
     df["numero"] = pd.to_numeric(df["numero"], errors="coerce").fillna(0).astype(int)
+    for c in ["estado", "nombre", "tipo_persona", "observaciones"]:
+    df[c] = df[c].fillna("").astype(str)
+    
     return df
 
 def guardar_en_sheets(df):
@@ -123,10 +126,18 @@ st.markdown(f"### ✏️ Editar información de {clave}")
 estado_opciones = ["humedad", "firmó", "sin humedad", "sin contacto", "no quiere firmar", "desocupado"]
 tipo_opciones = ["dueño", "inquilino"]
 
-estado = st.selectbox("Estado", estado_opciones, index=estado_opciones.index(registro["estado"]))
-nombre = st.text_input("Nombre del vecino", value=registro["nombre"])
-tipo = st.selectbox("¿Dueño o inquilino?", tipo_opciones, index=tipo_opciones.index(registro["tipo_persona"]))
-obs = st.text_area("Observaciones", value=registro["observaciones"])
+valor_estado = str(registro.get("estado", "") or "").strip()
+if valor_estado not in estado_opciones:
+    valor_estado = estado_opciones[0]  # "humedad" o ajusta si quieres otro default
+
+valor_tipo = str(registro.get("tipo_persona", "") or "").strip()
+if valor_tipo not in tipo_opciones:
+    valor_tipo = ""  # opción en blanco
+
+estado = st.selectbox("Estado", estado_opciones, index=estado_opciones.index(valor_estado))
+nombre = st.text_input("Nombre del vecino", value=str(registro.get("nombre", "") or ""))
+tipo = st.selectbox("¿Dueño o inquilino?", tipo_opciones, index=tipo_opciones.index(valor_tipo))
+obs = st.text_area("Observaciones", value=str(registro.get("observaciones", "") or ""))
 
 if st.button("💾 Guardar"):
     df.at[idx, "estado"] = estado
