@@ -13,25 +13,37 @@ import pandas as pd
 def usar_sheets():
     return ("gcp_service_account" in st.secrets) and ("sheets" in st.secrets)
 
-def cargar_desde_sheets(generar_departamentos):
-    import gspread
-    from google.oauth2.service_account import Credentials
-    from gspread_dataframe import get_as_dataframe, set_with_dataframe
-    SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
-    sh = gspread.authorize(creds).open_by_key(st.secrets["sheets"]["SHEET_ID"])
-    ws_name = st.secrets["sheets"].get("WORKSHEET", "datos")
-    try:
-        ws = sh.worksheet(ws_name)
-    except Exception:
-        ws = sh.add_worksheet(title=ws_name, rows=2000, cols=20)
 
+
+import gspread
+from google.oauth2.service_account import Credentials
+from gspread_dataframe import get_as_dataframe, set_with_dataframe
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SHEET_ID = st.secrets["sheets"]["SHEET_ID"]
+WORKSHEET = st.secrets["sheets"].get("WORKSHEET", "datos")
+
+def _ws():
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SHEET_ID)
+    try:
+        return sh.worksheet(WORKSHEET)
+    except gspread.WorksheetNotFound:
+        return sh.add_worksheet(title=WORKSHEET, rows=2000, cols=20)
+
+def cargar_desde_sheets():
+    ws = _ws()
     df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+
+    # Si está vacía o sin cabeceras → inicializa
     if df is None or df.empty or df.columns.tolist() == [0]:
         base = generar_departamentos()
-        ws.clear(); set_with_dataframe(ws, base)
+        ws.clear()
+        set_with_dataframe(ws, base)
         return base
 
+    # Normaliza columnas
     cols = ["torre","piso","numero","departamento","estado","nombre","tipo_persona","observaciones"]
     for c in cols:
         if c not in df.columns: df[c] = ""
@@ -39,6 +51,7 @@ def cargar_desde_sheets(generar_departamentos):
     df["piso"] = pd.to_numeric(df["piso"], errors="coerce").fillna(0).astype(int)
     df["numero"] = pd.to_numeric(df["numero"], errors="coerce").fillna(0).astype(int)
     return df
+
 
 def guardar_en_sheets(df):
     import gspread
@@ -145,13 +158,13 @@ st.title("🧱 Control de Humedad - Edificio")
 
 
 if "df" not in st.session_state:
-    if usar_sheets():
-        try:
-            st.session_state.df = cargar_desde_sheets(generar_departamentos)
-            st.success("Conectado a Google Sheets ✅")
-        except Exception as e:
-            st.error(f"No pude usar Google Sheets: {e}")
-            st.stop()
+    try:
+        st.session_state.df = cargar_desde_sheets()
+        st.success("Conectado a Google Sheets ✅")
+    except Exception as e:
+        st.error(f"No pude usar Google Sheets: {e}")
+        st.stop()
+
 df = st.session_state.df
 
 
@@ -183,12 +196,13 @@ if st.button("💾 Guardar"):
     df.at[idx, "nombre"] = nombre
     df.at[idx, "tipo_persona"] = tipo
     df.at[idx, "observaciones"] = obs
-    st.success("Cambios guardados")
+    st.session_state.df = df
     try:
         guardar_en_sheets(df)
         st.success("Cambios guardados en Google Sheets")
     except Exception as e:
         st.error(f"Error al guardar en Sheets: {e}")
+
 
 # ----- Descargar CSV -----
 csv = df.to_csv(index=False).encode("utf-8")
