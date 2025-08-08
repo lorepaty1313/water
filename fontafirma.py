@@ -121,7 +121,7 @@ registro = df.loc[idx]
 
 st.markdown(f"### ✏️ Editar información de {clave}")
 estado_opciones = ["humedad", "firmó", "sin humedad", "sin contacto", "no quiere firmar", "desocupado"]
-tipo_opciones = ["", "dueño", "inquilino"]
+tipo_opciones = ["dueño", "inquilino"]
 
 estado = st.selectbox("Estado", estado_opciones, index=estado_opciones.index(registro["estado"]))
 nombre = st.text_input("Nombre del vecino", value=registro["nombre"])
