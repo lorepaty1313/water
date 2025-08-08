@@ -68,8 +68,8 @@ def cargar_desde_sheets():
     df = df[cols].copy()
     df["piso"] = pd.to_numeric(df["piso"], errors="coerce").fillna(0).astype(int)
     df["numero"] = pd.to_numeric(df["numero"], errors="coerce").fillna(0).astype(int)
-        for c in ["estado", "nombre", "tipo_persona", "observaciones"]:
-            df[c] = df[c].fillna("").astype(str)
+    for c in ["estado", "nombre", "tipo_persona", "observaciones"]:
+        df[c] = df[c].fillna("").astype(str)
     
     return df
 
