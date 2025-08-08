@@ -124,7 +124,7 @@ registro = df.loc[idx]
 
 st.markdown(f"### ✏️ Editar información de {clave}")
 estado_opciones = ["humedad", "firmó", "sin humedad", "sin contacto", "no quiere firmar", "desocupado"]
-tipo_opciones = ["dueño", "inquilino"]
+tipo_opciones = ["", "dueño", "inquilino"]
 
 valor_estado = str(registro.get("estado", "") or "").strip()
 if valor_estado not in estado_opciones:
