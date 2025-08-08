@@ -5,6 +5,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
+
+import streamlit as st
+
+if "gcp_service_account" in st.secrets and "sheets" in st.secrets:
+    st.success("Secrets detectados ✅")
+    st.write("Sheet ID:", st.secrets["sheets"]["SHEET_ID"])
+else:
+    st.warning("Aún no detecto Secrets. Revisa Settings → Secrets.")
 # ----- Generar lista de departamentos -----
 def generar_departamentos():
     deptos = []
