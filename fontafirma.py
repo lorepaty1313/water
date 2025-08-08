@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
 
 # ----- Generar lista de departamentos -----
 def generar_departamentos():
@@ -30,13 +31,77 @@ def generar_departamentos():
     return pd.DataFrame(deptos)
 
 # ----- Cargar o inicializar base -----
-if "df" not in st.session_state:
-    st.session_state.df = generar_departamentos()
+def cargar_desde_sheets():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    from gspread_dataframe import get_as_dataframe, set_with_dataframe
 
-df = st.session_state.df
+    SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+    SHEET_ID = st.secrets["sheets"]["SHEET_ID"]
+    WORKSHEET = st.secrets["sheets"].get("WORKSHEET", "datos")
+
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SHEET_ID)
+    try:
+        ws = sh.worksheet(WORKSHEET)
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title=WORKSHEET, rows=2000, cols=20)
+
+    df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+    if df is None or df.empty or df.columns.tolist() == [0]:
+        base = generar_departamentos()
+        ws.clear()
+        set_with_dataframe(ws, base)
+        return base
+
+    cols = ["torre","piso","numero","departamento","estado","nombre","tipo_persona","observaciones"]
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    df = df[cols].copy()
+    df["piso"] = pd.to_numeric(df["piso"], errors="coerce").fillna(0).astype(int)
+    df["numero"] = pd.to_numeric(df["numero"], errors="coerce").fillna(0).astype(int)
+    return df
+
+def guardar_en_sheets(df):
+    import gspread
+    from google.oauth2.service_account import Credentials
+    from gspread_dataframe import set_with_dataframe
+
+    SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+    SHEET_ID = st.secrets["sheets"]["SHEET_ID"]
+    WORKSHEET = st.secrets["sheets"].get("WORKSHEET", "datos")
+
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SHEET_ID)
+    try:
+        ws = sh.worksheet(WORKSHEET)
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title=WORKSHEET, rows=2000, cols=20)
+
+    ws.clear()
+    set_with_dataframe(ws, df)
+
 
 # ----- Selección de ubicación -----
 st.title("🧱 Control de Humedad - Edificio")
+
+if "df" not in st.session_state:
+    if usar_sheets():
+        try:
+            st.session_state.df = cargar_desde_sheets()
+            st.success("Conectado a Google Sheets ✅")
+        except Exception as e:
+            st.warning(f"No se pudo usar Google Sheets ({e}). Usando CSV local.")
+            st.session_state.df = cargar_csv_o_inicial()
+    else:
+        st.info("Secrets no configurados. Usando CSV local por ahora.")
+        st.session_state.df = cargar_csv_o_inicial()
+
+df = st.session_state.df
+
 
 col1, col2, col3 = st.columns(3)
 torre_sel = col1.selectbox("Torre", ["A", "B", "C"])
@@ -80,7 +145,7 @@ color_map = {
     "humedad": "#2196F3",         # azul
     "sin humedad": "#BDBDBD",     # gris
     "sin contacto": "#FFC107",    # ámbar
-    "Desocupado": "#FFC108",    # ámbar
+    "desocupado": "#FFC108",    # ámbar
     "no quiere firmar": "#F44336" # rojo
 }
 
