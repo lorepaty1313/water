@@ -1,29 +1,20 @@
 
-
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import os
 
-
-import streamlit as st
-
-import pandas as pd
-
-def usar_sheets():
-    return ("gcp_service_account" in st.secrets) and ("sheets" in st.secrets)
-
-
-
+# ========= Google Sheets =========
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# Lee secrets (ya deben estar pegados en Cloud)
 SHEET_ID = st.secrets["sheets"]["SHEET_ID"]
 WORKSHEET = st.secrets["sheets"].get("WORKSHEET", "datos")
 
 def _ws():
+    """Abre (o crea) la worksheet."""
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(SHEET_ID)
@@ -32,48 +23,7 @@ def _ws():
     except gspread.WorksheetNotFound:
         return sh.add_worksheet(title=WORKSHEET, rows=2000, cols=20)
 
-def cargar_desde_sheets():
-    ws = _ws()
-    df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
-
-    # Si está vacía o sin cabeceras → inicializa
-    if df is None or df.empty or df.columns.tolist() == [0]:
-        base = generar_departamentos()
-        ws.clear()
-        set_with_dataframe(ws, base)
-        return base
-
-    # Normaliza columnas
-    cols = ["torre","piso","numero","departamento","estado","nombre","tipo_persona","observaciones"]
-    for c in cols:
-        if c not in df.columns: df[c] = ""
-    df = df[cols].copy()
-    df["piso"] = pd.to_numeric(df["piso"], errors="coerce").fillna(0).astype(int)
-    df["numero"] = pd.to_numeric(df["numero"], errors="coerce").fillna(0).astype(int)
-    return df
-
-
-def guardar_en_sheets(df):
-    import gspread
-    from google.oauth2.service_account import Credentials
-    from gspread_dataframe import set_with_dataframe
-    SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
-    sh = gspread.authorize(creds).open_by_key(st.secrets["sheets"]["SHEET_ID"])
-    ws_name = st.secrets["sheets"].get("WORKSHEET", "datos")
-    try:
-        ws = sh.worksheet(ws_name)
-    except Exception:
-        ws = sh.add_worksheet(title=ws_name, rows=2000, cols=20)
-    ws.clear()
-    set_with_dataframe(ws, df)
-
-if "gcp_service_account" in st.secrets and "sheets" in st.secrets:
-    st.success("Secrets detectados ✅")
-    st.write("Sheet ID:", st.secrets["sheets"]["SHEET_ID"])
-else:
-    st.warning("Aún no detecto Secrets. Revisa Settings → Secrets.")
-# ----- Generar lista de departamentos -----
+# ========= Base de datos inicial =========
 def generar_departamentos():
     deptos = []
     torres = {
@@ -81,7 +31,6 @@ def generar_departamentos():
         "B": [(1, 14), (2, 14), (3, 13)],
         "C": [(1, 13), (2, 13), (3, 13)]
     }
-
     for torre, pisos in torres.items():
         for piso, max_num in pisos:
             for i in range(1, max_num + 1):
@@ -98,31 +47,20 @@ def generar_departamentos():
                 })
     return pd.DataFrame(deptos)
 
-# ----- Cargar o inicializar base -----
+# ========= Persistencia: cargar / guardar =========
 def cargar_desde_sheets():
-    import gspread
-    from google.oauth2.service_account import Credentials
-    from gspread_dataframe import get_as_dataframe, set_with_dataframe
-
-    SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-    SHEET_ID = st.secrets["sheets"]["SHEET_ID"]
-    WORKSHEET = st.secrets["sheets"].get("WORKSHEET", "datos")
-
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SHEET_ID)
-    try:
-        ws = sh.worksheet(WORKSHEET)
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=WORKSHEET, rows=2000, cols=20)
-
+    """Carga DF desde Sheets. Si está vacío, inicializa con la base."""
+    ws = _ws()
     df = get_as_dataframe(ws, evaluate_formulas=True, header=0)
+
+    # Si está vacía o sin cabeceras → inicializa
     if df is None or df.empty or df.columns.tolist() == [0]:
         base = generar_departamentos()
         ws.clear()
         set_with_dataframe(ws, base)
         return base
 
+    # Normaliza columnas
     cols = ["torre","piso","numero","departamento","estado","nombre","tipo_persona","observaciones"]
     for c in cols:
         if c not in df.columns:
@@ -133,30 +71,21 @@ def cargar_desde_sheets():
     return df
 
 def guardar_en_sheets(df):
-    import gspread
-    from google.oauth2.service_account import Credentials
-    from gspread_dataframe import set_with_dataframe
-
-    SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-    SHEET_ID = st.secrets["sheets"]["SHEET_ID"]
-    WORKSHEET = st.secrets["sheets"].get("WORKSHEET", "datos")
-
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SHEET_ID)
-    try:
-        ws = sh.worksheet(WORKSHEET)
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=WORKSHEET, rows=2000, cols=20)
-
+    ws = _ws()
     ws.clear()
     set_with_dataframe(ws, df)
 
-
-# ----- Selección de ubicación -----
+# ========= App =========
 st.title("🧱 Control de Humedad - Edificio")
 
+# Diagnóstico rápido de secrets
+if "gcp_service_account" in st.secrets and "sheets" in st.secrets:
+    st.caption("Secrets detectados ✅  |  Sheet ID: " + st.secrets["sheets"]["SHEET_ID"])
+else:
+    st.error("No detecto Secrets. Ve a Settings → Secrets y pega el bloque TOML.")
+    st.stop()
 
+# Carga inicial desde Sheets
 if "df" not in st.session_state:
     try:
         st.session_state.df = cargar_desde_sheets()
@@ -167,21 +96,29 @@ if "df" not in st.session_state:
 
 df = st.session_state.df
 
-
+# ======= Formulario de edición =======
 col1, col2, col3 = st.columns(3)
 torre_sel = col1.selectbox("Torre", ["A", "B", "C"])
 piso_sel = col2.selectbox("Piso", [1, 2, 3])
-# Obtener departamentos válidos
+
 df_opciones = df[(df["torre"] == torre_sel) & (df["piso"] == piso_sel)]
 deptos_disp = sorted(df_opciones["numero"].tolist())
+if not deptos_disp:
+    st.warning("No hay departamentos para esa combinación (revisa la base).")
+    st.stop()
+
 numero_sel = col3.selectbox("Departamento", deptos_disp)
 clave = f"{torre_sel}-{numero_sel}"
 
-# Obtener registro actual
-registro = df[df["departamento"] == clave].iloc[0]
-idx = df[df["departamento"] == clave].index[0]
+# Registro a editar
+sel = df["departamento"] == clave
+if not sel.any():
+    st.warning(f"No encontré {clave} en la base.")
+    st.stop()
 
-# ----- Editar información -----
+idx = df.index[sel][0]
+registro = df.loc[idx]
+
 st.markdown(f"### ✏️ Editar información de {clave}")
 estado_opciones = ["humedad", "firmó", "sin humedad", "sin contacto", "no quiere firmar", "desocupado"]
 tipo_opciones = ["", "dueño", "inquilino"]
@@ -203,20 +140,18 @@ if st.button("💾 Guardar"):
     except Exception as e:
         st.error(f"Error al guardar en Sheets: {e}")
 
-
-# ----- Descargar CSV -----
+# Descargar CSV (por si quieres respaldo manual)
 csv = df.to_csv(index=False).encode("utf-8")
 st.download_button("⬇️ Descargar CSV", csv, "estado_departamentos.csv", "text/csv")
 
-
-# ----- Visualización como cuadrícula bonita -----
+# ======= Cuadrícula visual =======
 st.markdown("## 🏢 Mapa visual del edificio (cuadrícula)")
 color_map = {
-    "firmó": "#4CAF50",           # verde
-    "humedad": "#2196F3",         # azul
-    "sin humedad": "#BDBDBD",     # gris
-    "sin contacto": "#FFC107",    # ámbar
-    "desocupado": "#FFC108",    # ámbar
+    "firmó": "#4CAF50",        # verde
+    "humedad": "#2196F3",      # azul
+    "sin humedad": "#BDBDBD",  # gris
+    "sin contacto": "#FFC107", # ámbar
+    "desocupado": "#9E9E9E",   # gris medio
     "no quiere firmar": "#F44336" # rojo
 }
 
@@ -228,50 +163,39 @@ st.markdown("""
     gap: 16px;
     margin-top: 20px;
 }
-.torre {
-    text-align: center;
-    font-weight: bold;
-    font-size: 20px;
-}
-.piso {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    justify-content: center;
-    margin-bottom: 12px;
-}
+.torre { text-align: center; font-weight: bold; font-size: 20px; }
+.piso { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-bottom: 12px; }
 .depto {
-    width: 75px;
-    height: 50px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    color: white;
-    font-weight: bold;
+    width: 75px; height: 50px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: white; font-weight: bold;
 }
+.legend { display:flex; gap:10px; flex-wrap:wrap; margin: 6px 0 14px 0; }
+.legend-item { display:flex; align-items:center; gap:6px; }
+.legend-swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
 </style>
 """, unsafe_allow_html=True)
 
-# Mostrar torres A, B, C como columnas
-st.markdown('<div class="depto-grid">', unsafe_allow_html=True)
+# Leyenda
+legend_html = '<div class="legend">'
+for k, v in color_map.items():
+    legend_html += f'<span class="legend-item"><span class="legend-swatch" style="background:{v}"></span>{k}</span>'
+legend_html += '</div>'
+st.markdown(legend_html, unsafe_allow_html=True)
 
+# Render por torre/piso
+st.markdown('<div class="depto-grid">', unsafe_allow_html=True)
 for torre in ["A", "B", "C"]:
     st.markdown(f'<div class="torre">{torre}</div>', unsafe_allow_html=True)
-    
     pisos = sorted(df[df["torre"] == torre]["piso"].unique(), reverse=True)
-    
     html = '<div>'
     for piso in pisos:
         piso_deptos = df[(df["torre"] == torre) & (df["piso"] == piso)]
         html += '<div class="piso">'
         for _, row in piso_deptos.iterrows():
             color = color_map.get(row["estado"], "#9E9E9E")
-            html += f'<div class="depto" style="background-color: {color}">{row["departamento"]}</div>'
+            html += f'<div class="depto" style="background-color:{color}">{row["departamento"]}</div>'
         html += '</div>'
     html += '</div>'
-    
     st.markdown(html, unsafe_allow_html=True)
-
 st.markdown('</div>', unsafe_allow_html=True)
